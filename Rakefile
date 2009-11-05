@@ -10,9 +10,10 @@ begin
     gem.email = "jphastings@gmail.com"
     gem.homepage = "http://github.com/jphastings/dmap"
     gem.authors = ["JP Hastings-Spital"]
-    gem.add_development_dependency "thoughtbot-shoulda", ">= 0"
+    gem.add_development_dependency "Shoulda"
     # gem is a Gem::Specification... see http://www.rubygems.org/read/chapter/20 for additional settings
   end
+  Jeweler::GemcutterTasks.new
 rescue LoadError
   puts "Jeweler (or a dependency) not available. Install it with: sudo gem install jeweler"
 end

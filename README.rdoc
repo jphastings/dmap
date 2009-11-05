@@ -1,18 +1,9 @@
 = dmap
 
-Description goes here.
+I'm planning on building a Ruby library to parse and create DMAP bytestrings. Primarily in order to create a DAAP server in ruby, though if anyone has other interesting uses that would require changes to this code please don't hesitate to get in touch!
 
-== Note on Patches/Pull Requests
- 
-* Fork the project.
-* Make your feature addition or bug fix.
-* Add tests for it. This is important so I don't break it in a
-  future version unintentionally.
-* Commit, do not mess with rakefile, version, or history.
-  (if you want to have your own version, that is fine but
-   bump version in a commit by itself I can ignore when I pull)
-* Send me a pull request. Bonus points for topic branches.
+== What is dmap?
 
-== Copyright
+DMAP are a method of storing a variety of objects in a bytestring, its used all over the shot by Apple in iTunes, iPhoto and probably many other places. You can read up a little on the wikipedia (http://en.wikipedia.org/wiki/Digital_Audio_Access_Protocol) or read about the daap protocol (http://tapjam.net/daap/) to get the gist of it.
 
-Copyright (c) 2009 JP Hastings-Spital. See LICENSE for details.
+There's a big ol' list of the tags that are known on the deleet.de website (http://www.deleet.de/projekte/daap/?ContentCodes) but there are undoubtedly many more (I remember from an old project that similar file structure is used for QuickTime's mov containers and even for the mp4 container, so there may well be more there too). If you find any useful resources please get in touch!
