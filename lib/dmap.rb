@@ -109,7 +109,7 @@ module DMAP
         # FIXME: Are version numbers x.y ?
         @real_class = Version.new(@io.read(@io.read(4).unpack("N")[0]).unpack("nn").join("."))
       rescue NoMethodError
-        @real_class = Version.new("1.0")
+        @real_class = Version.new(content || "1.0")
       end
     end
     
@@ -244,8 +244,7 @@ module DMAP
     end
     
     def self.pack_code(length,signed)
-      out = {1=>"C",2=>"S",4=>"N",8=>"Q"}[length] # FIXME: Lower case N won't work!
-      out.downcase if signed
+      out = {1=>"C",-1=>"c",2=>"n",4=>"N",8=>"Q",-8=>"q"}[length * (signed ? -1 : 1)] # FIXME: pack codes for all signed cases
       return out
     end
     
