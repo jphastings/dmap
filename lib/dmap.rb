@@ -20,10 +20,10 @@ module DMAP
     #
     # NB. if you specify `content` while passing a dmap tag you will overwrite anything
     # that was in the dmap!
-    def initialize(tag_or_dmap,new_content = nil)      
+    def initialize(tag_or_dmap,new_content = nil)    
       # Assume we have an IO object, if this fails then we probably have a string instead
       begin
-        @tag = tag_or_dmap.read(4).upcase
+        @tag = tag_or_dmap.read(4).downcase
         @io = tag_or_dmap if new_content.nil?
       rescue NoMethodError
         @tag = tag_or_dmap[0..3].upcase
@@ -31,7 +31,7 @@ module DMAP
       
       # Find out the details of this tag
       begin
-        type,@name = DMAP.const_get(@tag)
+        @name,type = DMAP::TAGS[@tag.to_sym]
       rescue NameError
         raise NameError, "I don't know how to interpret the tag '#{@tag}'. Please extend the DMAP module!"
       end
@@ -84,27 +84,43 @@ module DMAP
       @real_class = Array.new(content || @io || [])
     end
     
-    def parse_number(content,signed = false)
+    def parse_byte(content)
       begin
-        if not content.nil? and content.is_a? Numeric
-          @real_class = MeasuredInteger.new(content,nil,signed)
-        elsif not content.nil? and (content[0].is_a? Numeric and content[1].is_a? Numeric)
-          @real_class = MeasuredInteger.new(content[0],content[1],signed)
-        else
-          box_size = @io.read(4).unpack("N")[0]
-          case box_size
-          when 1,2,4
-            num = @io.read(box_size).unpack(MeasuredInteger.pack_code(box_size,signed))[0]
-          when 8
-            num = @io.read(box_size).unpack("NN")
-            num = num[0]*65536 + num[1]
-          else
-            raise "I don't know how to unpack an integer #{box_size} bytes long"
-          end
-          @real_class = MeasuredInteger.new(num,box_size,signed)
-        end
+        @real_class = MeasuredInteger.new(@io.read(@io.read(4).unpack("N")[0]).unpack("C")[0],1,false)
       rescue NoMethodError
-        @real_class = MeasuredInteger.new(0,0,signed)
+        @real_class = MeasuredInteger.new(0,1,false)
+      end
+    end
+    
+    def parse_short(content)
+      begin
+        @real_class = MeasuredInteger.new(@io.read(@io.read(4).unpack("N")[0]).unpack("n")[0],2,false)
+      rescue NoMethodError
+        @real_class = MeasuredInteger.new(0,2,false)
+      end
+    end
+    
+    def parse_integer(content)
+      begin
+        @real_class = MeasuredInteger.new(@io.read(@io.read(4).unpack("N")[0]).unpack("N")[0],4,false) # Use L?
+      rescue NoMethodError
+        @real_class = MeasuredInteger.new(0,4,false)
+      end
+    end
+    
+    def parse_long(content)
+      begin
+        @real_class = MeasuredInteger.new(@io.read(@io.read(4).unpack("N")[0]).unpack("Q")[0],8,false)
+      rescue NoMethodError
+        @real_class = MeasuredInteger.new(0,8,false)
+      end
+    end
+    
+    def parse_signed_integer(content)
+      begin
+        @real_class = MeasuredInteger.new(@io.read(@io.read(4).unpack("N")[0]).unpack("l")[0],4,true)
+      rescue NoMethodError
+        @real_class = MeasuredInteger.new(0,4,true)
       end
     end
     
@@ -112,9 +128,9 @@ module DMAP
     def parse_version(content)
       begin
         # FIXME: Are version numbers x.y ?
-        @real_class = Version.new(@io.read(@io.read(4).unpack("N")[0]).unpack("nn").join("."))
+        @real_class = Version.new(@io.read(@io.read(4).unpack("N")[0]).unpack("CCCC").join("."))
       rescue NoMethodError
-        @real_class = Version.new(content || "1.0")
+        @real_class = Version.new(content || "0.1.0.0")
       end
     end
     
@@ -124,10 +140,6 @@ module DMAP
       rescue NoMethodError
         @real_class = Time.now
       end
-    end
-    
-    def parse_signed(content)
-      parse_number(content,true)
     end
   end
   
@@ -155,7 +167,6 @@ module DMAP
         @dmap_io     = array_or_io
         @dmap_start  = @dmap_io.tell
         @unparsed_data = true
-        parse_dmap if @@parse_immediately
       rescue NoMethodError
         begin
           array_or_io.each do |element|
@@ -170,6 +181,7 @@ module DMAP
         @unparsed_data = false
       end
       
+      parse_dmap if @@parse_immediately
     end
     
     [:==, :===, :=~, :clone, :display, :dup, :enum_for, :eql?, :equal?, :hash, :to_a, :to_enum, :each, :length].each do |method_name|
@@ -225,32 +237,23 @@ module DMAP
     attr_reader :value
     attr_accessor :box_size, :binary, :signed
     
-    def initialize(value,wanted_box_size = nil,signed = false)
+    def initialize(value,box_size = 1,signed = false)
       @value = value
-      @binary = (box_size == 1)
-      self.box_size = wanted_box_size
+      @box_size = box_size
       @signed = signed
     end
     
-    # Will set the box size to the largest value of the one you specify and the maximum needed for the
-    # current value.
-    def box_size=(wanted_box_size)
-      # Find the smallest number of bytes needed to express this number
-      @box_size = [wanted_box_size || 1,2**((Math.log(Math.log(@value) / Math.log(64))/Math.log(2)).ceil)].max rescue 1 # For log(0)
-    end
-    
-    def to_dmap
+    def to_dmap # TODO: Tidy me
       case @box_size
       when 1,2,4,8
-        [@box_size,@value].pack("N"<<MeasuredInteger.pack_code(@box_size,@signed))
+        [@box_size,@value].pack("N"<<pack_code)
       else
         raise "I don't know how to unpack an integer #{@box_size} bytes long"
       end
     end
     
-    def self.pack_code(length,signed)
-      out = {1=>"C",-1=>"c",2=>"n",4=>"N",8=>"Q",-8=>"q"}[length * (signed ? -1 : 1)] # FIXME: pack codes for all signed cases
-      return out
+    def pack_code
+      {1=>"C",-1=>"c",2=>"n",4=>"N",8=>"Q",-8=>"q"}[length * (signed ? -1 : 1)] # FIXME: pack codes for all signed cases
     end
     
     def inspect
@@ -275,7 +278,7 @@ module DMAP
     end
     
     def inspect
-      "v#{@major}.#{@minor}"
+      "v#{@maximus}.#{@major}.#{@minor}.#{@minimus}"
     end
   end
   
@@ -293,154 +296,156 @@ module DMAP
     end
   end
   
-  #F�CH = [:number, 'dmap.haschildcontainers']
-  ABAL = [:list,   'daap.browsealbumlisting']
-  ABAR = [:list,   'daap.browseartistlisting']
-  ABCP = [:list,   'daap.browsecomposerlisting']
-  ABGN = [:list,   'daap.browsegenrelisting']
-  ABPL = [:number, 'daap.baseplaylist']
-  ABRO = [:list,   'daap.databasebrowse']
-  ADBS = [:list,   'daap.databasesongs']
-  AEAI = [:number, 'com.apple.itunes.itms-artistid']
-  AECI = [:number, 'com.apple.itunes.itms-composerid']
-  AECR = [:string, 'com.apple.itunes.content-rating']
-  AEEN = [:string, 'com.apple.itunes.episode-num-str']
-  AEES = [:number, 'com.apple.itunes.episode-sort']
-  AEFP = [:number, 'com.apple.itunes.req-fplay']
-  AEGD = [:number, 'com.apple.itunes.gapless-enc-dr']
-  AEGE = [:number, 'com.apple.itunes.gapless-enc-del']
-  AEGH = [:number, 'com.apple.itunes.gapless-heur']
-  AEGI = [:number, 'com.apple.itunes.itms-genreid']
-  AEGR = [:number, 'com.apple.itunes.gapless-resy']
-  AEGU = [:number, 'com.apple.itunes.gapless-dur']
-  AEHD = [:number, 'com.apple.itunes.is-hd-video']
-  AEHV = [:number, 'com.apple.itunes.has-video']
-  AEMK = [:number, 'com.apple.itunes.mediakind']
-  AENN = [:string, 'com.apple.itunes.network-name']
-  AENV = [:number, 'com.apple.itunes.norm-volume']
-  AEPC = [:number, 'com.apple.itunes.is-podcast']
-  AEPI = [:number, 'com.apple.itunes.itms-playlistid']
-  AEPP = [:number, 'com.apple.itunes.is-podcast-playlist']
-  AEPS = [:number, 'com.apple.itunes.special-playlist']
-  AESF = [:number, 'com.apple.itunes.itms-storefrontid']
-  AESG = [:number, 'com.apple.itunes.saved-genius']
-  AESI = [:number, 'com.apple.itunes.itms-songid']
-  AESN = [:string, 'com.apple.itunes.series-name']
-  AESP = [:number, 'com.apple.itunes.smart-playlist']
-  AESU = [:number, 'com.apple.itunes.season-num']
-  AESV = [:version,'com.apple.itunes.music-sharing-version'] # They think its a :number
-  AGRP = [:string, 'daap.songgrouping']
-  APLY = [:list,   'daap.databaseplaylists']
-  APRM = [:number, 'daap.playlistrepeatmode']
-  APRO = [:version,'daap.protocolversion']
-  APSM = [:number, 'daap.playlistshufflemode']
-  APSO = [:list,   'daap.playlistsongs']
-  ARIF = [:list,   'daap.resolveinfo']
-  ARSV = [:list,   'daap.resolve']
-  ASAA = [:string, 'daap.songalbumartist']
-  ASAI = [:number, 'daap.songalbumid']
-  ASAL = [:string, 'daap.songalbum']
-  ASAR = [:string, 'daap.songartist']
-  ASBK = [:number, 'daap.bookmarkable']
-  ASBO = [:number, 'daap.songbookmark']
-  ASBR = [:number, 'daap.songbitrate']
-  ASBT = [:number, 'daap.songbeatsperminute']
-  ASCD = [:number, 'daap.songcodectype']
-  ASCM = [:string, 'daap.songcomment']
-  ASCN = [:string, 'daap.songcontentdescription']
-  ASCO = [:number, 'daap.songcompilation']
-  ASCP = [:string, 'daap.songcomposer']
-  ASCR = [:number, 'daap.songcontentrating']
-  ASCS = [:number, 'daap.songcodecsubtype']
-  ASCT = [:string, 'daap.songcategory']
-  ASDA = [:time,   'daap.songdateadded']
-  ASDB = [:number, 'daap.songdisabled']
-  ASDC = [:number, 'daap.songdisccount']
-  ASDK = [:number, 'daap.songdatakind']
-  ASDM = [:time,   'daap.songdatemodified']
-  ASDN = [:number, 'daap.songdiscnumber']
-  ASDP = [:time,   'daap.songdatepurchased']
-  ASDR = [:time,   'daap.songdatereleased']
-  ASDT = [:string, 'daap.songdescription']
-  ASED = [:number, 'daap.songextradata']
-  ASEQ = [:string, 'daap.songeqpreset']
-  ASFM = [:string, 'daap.songformat']
-  ASGN = [:string, 'daap.songgenre']
-  ASGP = [:number, 'daap.songgapless']
-  ASHP = [:number, 'daap.songhasbeenplayed']
-  ASKY = [:string, 'daap.songkeywords']
-  ASLC = [:string, 'daap.songlongcontentdescription']
-  ASLS = [:number, 'daap.songlongsize']
-  ASPU = [:string, 'daap.songpodcasturl']
-  ASRV = [:signed, 'daap.songrelativevolume']
-  ASSA = [:string, 'daap.sortartist']
-  ASSC = [:string, 'daap.sortcomposer']
-  ASSL = [:string, 'daap.sortalbumartist']
-  ASSN = [:string, 'daap.sortname']
-  ASSP = [:number, 'daap.songstoptime']
-  ASSR = [:number, 'daap.songsamplerate']
-  ASSS = [:string, 'daap.sortseriesname']
-  ASST = [:number, 'daap.songstarttime']
-  ASSU = [:string, 'daap.sortalbum']
-  ASSZ = [:number, 'daap.songsize']
-  ASTC = [:number, 'daap.songtrackcount']
-  ASTM = [:number, 'daap.songtime']
-  ASTN = [:number, 'daap.songtracknumber']
-  ASUL = [:string, 'daap.songdataurl']
-  ASUR = [:number, 'daap.songuserrating']
-  ASYR = [:number, 'daap.songyear']
-  ATED = [:number, 'daap.supportsextradata']
-  AVDB = [:list,   'daap.serverdatabases']
-  CEJC = [:signed, 'com.apple.itunes.jukebox-client-vote']
-  CEJI = [:number, 'com.apple.itunes.jukebox-current']
-  CEJS = [:signed, 'com.apple.itunes.jukebox-score']
-  CEJV = [:number, 'com.apple.itunes.jukebox-vote']
-  MBCL = [:list,   'dmap.bag']
-  MCCR = [:list,   'dmap.contentcodesresponse']
-  MCNA = [:string, 'dmap.contentcodesname']
-  MCNM = [:number, 'dmap.contentcodesnumber']
-  MCON = [:list,   'dmap.container']
-  MCTC = [:number, 'dmap.containercount']
-  MCTI = [:number, 'dmap.containeritemid']
-  MCTY = [:number, 'dmap.contentcodestype']
-  MDCL = [:list,   'dmap.dictionary']
-  MEDS = [:number, 'dmap.editcommandssupported']
-  MIID = [:number, 'dmap.itemid']
-  MIKD = [:number, 'dmap.itemkind']
-  MIMC = [:number, 'dmap.itemcount']
-  MINM = [:string, 'dmap.itemname']
-  MLCL = [:list,   'dmap.listing']
-  MLID = [:number, 'dmap.sessionid']
-  MLOG = [:list,   'dmap.loginresponse']
-  MPCO = [:number, 'dmap.parentcontainerid']
-  MPER = [:number, 'dmap.persistentid']
-  MPRO = [:version,'dmap.protocolversion']
-  MRCO = [:number, 'dmap.returnedcount']
-  MSAL = [:number, 'dmap.supportsautologout']
-  MSAS = [:number, 'dmap.authenticationschemes']
-  MSAU = [:number, 'dmap.authenticationmethod']
-  MSBR = [:number, 'dmap.supportsbrowse']
-  MSDC = [:number, 'dmap.databasescount']
-  MSED = [:number, 'unknown_msed']
-  MSEX = [:number, 'dmap.supportsextensions']
-  MSIX = [:number, 'dmap.supportsindex']
-  MSLR = [:number, 'dmap.loginrequired']
-  MSMA = [:number, 'unknown_msma']
-  MSML = [:list,   'unknown_msml']
-  MSPI = [:number, 'dmap.supportspersistentids']
-  MSQY = [:number, 'dmap.supportsquery']
-  MSRS = [:number, 'dmap.supportsresolve']
-  MSRV = [:list,   'dmap.serverinforesponse']
-  MSTC = [:time,   'dmap.utctime']
-  MSTM = [:number, 'dmap.timeoutinterval']
-  MSTO = [:signed, 'dmap.utcoffset']
-  MSTS = [:string, 'dmap.statusstring']
-  MSTT = [:number, 'dmap.status']
-  MSUP = [:number, 'dmap.supportsupdate']
-  MTCO = [:number, 'dmap.specifiedtotalcount']
-  MUDL = [:list,   'dmap.deletedidlisting']
-  MUPD = [:list,   'dmap.updateresponse']
-  MUSR = [:number, 'dmap.serverrevision']
-  MUTY = [:number, 'dmap.updatetype']
-  MLIT = [:list,   'dmap.listingitem']
+  TAGS = {
+    :abal => ['daap.browsealbumlisting', :list],
+    :abar => ['daap.browseartistlisting', :list],
+    :abcp => ['daap.browsecomposerlisting', :list],
+    :abgn => ['daap.browsegenrelisting', :list],
+    :abpl => ['daap.baseplaylist', :byte],
+    :abro => ['daap.databasebrowse', :list],
+    :adbs => ['daap.databasesongs', :list],
+    :aeAI => ['com.apple.itunes.itms-artistid', :integer],
+    :aeCI => ['com.apple.itunes.itms-composerid', :integer],
+    :aeCR => ['com.apple.itunes.content-rating', :string],
+    :aeEN => ['com.apple.itunes.episode-num-str', :string],
+    :aeES => ['com.apple.itunes.episode-sort', :integer],
+    :aeFP => ['com.apple.itunes.req-fplay', :byte],
+    :aeGU => ['com.apple.itunes.gapless-dur', :long],
+    :aeGD => ['com.apple.itunes.gapless-enc-dr', :integer],
+    :aeGE => ['com.apple.itunes.gapless-enc-del', :integer],
+    :aeGH => ['com.apple.itunes.gapless-heur', :integer],
+    :aeGI => ['com.apple.itunes.itms-genreid', :integer],
+    :aeGR => ['com.apple.itunes.gapless-resy', :long],
+    :aeHD => ['com.apple.itunes.is-hd-video', :byte],
+    :aeHV => ['com.apple.itunes.has-video', :byte],
+    :aeMK => ['com.apple.itunes.mediakind', :byte],
+    :aeNN => ['com.apple.itunes.network-name', :string],
+    :aeNV => ['com.apple.itunes.norm-volume', :integer],
+    :aePC => ['com.apple.itunes.is-podcast', :byte],
+    :aePI => ['com.apple.itunes.itms-playlistid', :integer],
+    :aePP => ['com.apple.itunes.is-podcast-playlist', :byte],
+    :aePS => ['com.apple.itunes.special-playlist', :byte],
+    :aeSU => ['com.apple.itunes.season-num', :integer],
+    :aeSF => ['com.apple.itunes.itms-storefrontid', :integer],
+    :aeSG => ['com.apple.itunes.saved-genius', :byte],
+    :aeSI => ['com.apple.itunes.itms-songid', :integer],
+    :aeSN => ['com.apple.itunes.series-name', :string],
+    :aeSP => ['com.apple.itunes.smart-playlist', :byte],
+    :aeSV => ['com.apple.itunes.music-sharing-version', :integer],
+    :agrp => ['daap.songgrouping', :string],
+    :aply => ['daap.databaseplaylists', :list], 
+    :aprm => ['daap.playlistrepeatmode', :byte],
+    :apro => ['daap.protocolversion', :version],
+    :apsm => ['daap.playlistshufflemode', :byte],
+    :apso => ['daap.playlistsongs', :list],
+    :arif => ['daap.resolveinfo', :list],
+    :arsv => ['daap.resolve', :list],
+    :asaa => ['daap.songalbumartist', :string],
+    :asai => ['daap.songalbumid', :long],
+    :asal => ['daap.songalbum', :string],
+    :asar => ['daap.songartist', :string],
+    :asbk => ['daap.bookmarkable', :byte],
+    :asbo => ['daap.songbookmark', :integer],
+    :asbr => ['daap.songbitrate', :short],
+    :asbt => ['daap.songbeatsperminute', :short],
+    :ascd => ['daap.songcodectype', :integer],
+    :ascm => ['daap.songcomment', :string],
+    :ascn => ['daap.songcontentdescription', :string],
+    :asco => ['daap.songcompilation', :byte],
+    :ascp => ['daap.songcomposer', :string],
+    :ascr => ['daap.songcontentrating', :byte],
+    :ascs => ['daap.songcodecsubtype', :integer],
+    :asct => ['daap.songcategory', :string],
+    :asda => ['daap.songdateadded', :time],
+    :asdb => ['daap.songdisabled', :byte],
+    :asdc => ['daap.songdisccount', :short],
+    :asdk => ['daap.songdatakind', :byte],
+    :asdm => ['daap.songdatemodified', :time],
+    :asdn => ['daap.songdiscnumber', :short],
+    :asdp => ['daap.songdatepurchased', :time],
+    :asdr => ['daap.songdatereleased', :time],
+    :asdt => ['daap.songdescription', :string],
+    :ased => ['daap.songextradata', :short],
+    :aseq => ['daap.songeqpreset', :string],
+    :asfm => ['daap.songformat', :string],
+    :asgn => ['daap.songgenre', :string],
+    :asgp => ['daap.songgapless', :byte],
+    :ashp => ['daap.songhasbeenplayed', :byte],
+    :asky => ['daap.songkeywords', :string],
+    :aslc => ['daap.songlongcontentdescription', :string],
+    :asls => ['daap.songlongsize', :long],
+    :aspu => ['daap.songpodcasturl', :string],
+    :asrv => ['daap.songrelativevolume', :signed_byte],
+    :assu => ['daap.sortalbum', :string],
+    :assa => ['daap.sortartist', :string],
+    :assc => ['daap.sortcomposer', :string],
+    :assl => ['daap.sortalbumartist', :string],
+    :assn => ['daap.sortname', :string],
+    :assp => ['daap.songstoptime', :integer],
+    :assr => ['daap.songsamplerate', :integer],
+    :asss => ['daap.sortseriesname', :string],
+    :asst => ['daap.songstarttime', :integer],
+    :assz => ['daap.songsize', :integer],
+    :astc => ['daap.songtrackcount', :short],
+    :astm => ['daap.songtime', :integer],
+    :astn => ['daap.songtracknumber', :short],
+    :asul => ['daap.songdataurl', :string],
+    :asur => ['daap.songuserrating', :byte],
+    :asyr => ['daap.songyear', :short],
+    :ated => ['daap.supportsextradata', :short],
+    :avdb => ['daap.serverdatabases', :list],
+    :ceJC => ['com.apple.itunes.jukebox-client-vote', :signed_byte],
+    :ceJI => ['com.apple.itunes.jukebox-current', :integer],
+    :ceJS => ['com.apple.itunes.jukebox-score', :signed_short],
+    :ceJV => ['com.apple.itunes.jukebox-vote', :integer],
+    :"f\215ch" => ['dmap.haschildcontainers', :byte],
+    :mbcl => ['dmap.bag', :list],
+    :mccr => ['dmap.contentcodesresponse', :list],
+    :mcna => ['dmap.contentcodesname', :string],
+    :mcnm => ['dmap.contentcodesnumber', :integer],
+    :mcon => ['dmap.container', :list],
+    :mctc => ['dmap.containercount', :integer],
+    :mcti => ['dmap.containeritemid', :integer],
+    :mcty => ['dmap.contentcodestype', :short],
+    :mdcl => ['dmap.dictionary', :list],
+    :meds => ['dmap.editcommandssupported', :integer],
+    :miid => ['dmap.itemid', :integer],
+    :mikd => ['dmap.itemkind', :byte],
+    :mimc => ['dmap.itemcount', :integer],
+    :minm => ['dmap.itemname', :string],
+    :mlcl => ['dmap.listing', :list],
+    :mlid => ['dmap.sessionid', :integer],
+    :mlit => ['dmap.listingitem', :list],
+    :mlog => ['dmap.loginresponse', :list],
+    :mpco => ['dmap.parentcontainerid', :integer],
+    :mper => ['dmap.persistentid', :long],
+    :mpro => ['dmap.protocolversion', :version],
+    :mrco => ['dmap.returnedcount', :integer],
+    :msau => ['dmap.authenticationmethod', :byte],
+    :msal => ['dmap.supportsautologout', :byte],
+    :msas => ['dmap.authenticationschemes', :integer],
+    :msbr => ['dmap.supportsbrowse', :byte],
+    :msdc => ['dmap.databasescount', :integer],
+    :msed => ['unknown_msed', :byte], # TODO: Figure out what these are for
+    :msex => ['dmap.supportsextensions', :byte],
+    :msix => ['dmap.supportsindex', :byte],
+    :mslr => ['dmap.loginrequired', :byte],
+    :msma => ['unknown_msma', :long],
+    :msml => ['unknown_msml', :list],
+    :mspi => ['dmap.supportspersistentids', :byte],
+    :msqy => ['dmap.supportsquery', :byte],
+    :msrs => ['dmap.supportsresolve', :byte],
+    :msrv => ['dmap.serverinforesponse', :list],
+    :mstc => ['dmap.utctime', :time],
+    :mstm => ['dmap.timeoutinterval', :integer],
+    :msto => ['dmap.utcoffset', :signed_integer],
+    :msts => ['dmap.statusstring', :string],
+    :mstt => ['dmap.status', :integer],
+    :msup => ['dmap.supportsupdate', :byte],
+    :mtco => ['dmap.specifiedtotalcount', :integer],
+    :mudl => ['dmap.deletedidlisting', :list],
+    :mupd => ['dmap.updateresponse', :list],
+    :musr => ['dmap.serverrevision', :integer],
+    :muty => ['dmap.updatetype', :byte],
+  }
 end
