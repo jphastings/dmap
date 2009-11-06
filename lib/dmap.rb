@@ -43,11 +43,24 @@ module DMAP
       eigenclass = class<<self; self; end
       eigenclass.class_eval do
         extend Forwardable
-        def_delegators :@real_class,*fudge.methods - ['__send__','__id__']
+        def_delegators :@real_class,*fudge.methods - ['__send__','__id__','to_dmap']
         def inspect
           "<#{@tag}: #{@real_class.inspect}>"
         end
       end
+    end
+    
+    def close_stream
+      begin
+        @io.close
+      rescue NoMethodError
+        # There was no IO or its already been closed
+      end
+    end
+    
+    # Adds the tag to a request to create the dmap
+    def to_dmap
+      "#{@tag.downcase}#{@real_class.to_dmap}"
     end
     
     private
@@ -67,16 +80,24 @@ module DMAP
     def parse_number(content,signed = false)
       begin
         if not content.nil? and content.is_a? Numeric
-          @real_class = MeasuredInteger.new(content)
+          @real_class = MeasuredInteger.new(content,nil,signed)
         elsif not content.nil? and (content[0].is_a? Numeric and content[1].is_a? Numeric)
-          @real_class = MeasuredInteger.new(content[0],content[1])
+          @real_class = MeasuredInteger.new(content[0],content[1],signed)
         else
           box_size = @io.read(4).unpack("N")[0]
-          num = @io.read(box_size).unpack("N")[0] # FIXME: Needs to change for different values of box_size
-          @real_class = MeasuredInteger.new(num,box_size)
+          case box_size
+          when 1,2,4
+            num = @io.read(box_size).unpack(MeasuredInteger.pack_code(box_size,signed))[0]
+          when 8
+            num = @io.read(box_size).unpack("NN")
+            num = num[0]*65536 + num[1]
+          else
+            raise "I don't know how to unpack an integer #{box_size} bytes long"
+          end
+          @real_class = MeasuredInteger.new(num,box_size,signed)
         end
       rescue NoMethodError
-        @real_class = MeasuredInteger.new(0)
+        @real_class = MeasuredInteger.new(0,0,signed)
       end
     end
     
@@ -108,9 +129,10 @@ module DMAP
   class Array < Array
     attr_reader :unparsed_data
     attr_accessor :parse_immediately
+    @@parse_immediately = false
     
     def self.parse_immediately
-      @@parse_immediately = @@parse_immedaitely || false
+      @@parse_immediately
     end
     
     def self.parse_immediately=(bool)
@@ -139,12 +161,22 @@ module DMAP
       
     end
     
-    [:==, :===, :=~, :clone, :display, :dup, :enum_for, :eql?, :equal?, :hash, :to_a, :to_enum,:each].each do |method_name|
+    [:==, :===, :=~, :clone, :display, :dup, :enum_for, :eql?, :equal?, :hash, :to_a, :to_enum, :each, :length].each do |method_name|
       original = self.instance_method(method_name)
       define_method(method_name) do
         self.parse_dmap
         original.bind(self).call
       end
+    end
+    
+    def to_dmap
+      out = "\000\000\000\000"
+      (0...self.length).to_a.each do |n|
+        out << self[n].to_dmap
+      end
+      
+      out[0..3] = [out.length - 4].pack("N")
+      out
     end
     
     def inspect
@@ -178,22 +210,41 @@ module DMAP
   # Allows people to specify a integer and the size of the binary representation required
   class MeasuredInteger
     attr_reader :value
-    attr_accessor :box_size, :binary
+    attr_accessor :box_size, :binary, :signed
     
-    def initialize(value,box_size = nil)
+    def initialize(value,wanted_box_size = nil,signed = false)
       @value = value
       @binary = (box_size == 1)
-      set_box_size = box_size
+      self.box_size = wanted_box_size
+      @signed = signed
     end
     
     # Will set the box size to the largest value of the one you specify and the maximum needed for the
     # current value.
-    def box_size=(box_size)
+    def box_size=(wanted_box_size)
       # Find the smallest number of bytes needed to express this number
-      @box_size = [box_size || 0,(Math.log(@value) / 2.07944154167984).ceil].max rescue 0 # For when value = 0
+      @box_size = [wanted_box_size || 0,(Math.log(@value) / 2.07944154167984).ceil].max rescue 0 # For when value = 0
+    end
+    
+    def to_dmap
+      case @box_size
+      when 1,2,4
+        [@box_size,@value].pack("N"<<MeasuredInteger.pack_code(@box_size,@signed))
+      when 8
+        [@box_size,@value / 65536,@value % 65536].pack((@signed) ? "Nll" : "NNN") # FIXME: How do you do signed version :S
+      else
+        raise "I don't know how to unpack an integer #{@box_size} bytes long"
+      end
+    end
+    
+    def self.pack_code(length,signed)
+      out = {1=>"C",2=>"S",4=>"N"}[length]
+      out.downcase if signed
+      return out
     end
     
     def inspect
+      # This is a bit of a guess, no change to the data, just helps inspection
       return (@value == 1) ? "true" : "false" if @binary
       @value
     end
@@ -204,6 +255,20 @@ module DMAP
     # TODO
     def initialize(version)
       
+    end
+  end
+  
+  # For adding String#to_dmap
+  class String < String
+    def to_dmap
+      return [self.length % 65536].pack("N") + self.to_s
+    end
+  end
+  
+  # For adding Time#to_dmap
+  class Time < Time
+    def to_dmap
+      [self.to_i / 65536,self.to_i % 65536].pack("NN")
     end
   end
   
@@ -359,7 +424,17 @@ module DMAP
   AESF = [:number, 'com.apple.itunes.itms-storefrontid']
 end
 
-DMAP::Array.parse_immediately = true
-open("server-info") do |f|
-  p DMAP::Element.new(f)
+p a = DMAP::Element.new("msrv",[
+  DMAP::Element.new('mspi',[400,4]),
+  DMAP::Element.new("minm","Howdy Ho!"),
+  DMAP::Element.new("mstc")
+])
+open("test","w") do |f|
+  f.write a.to_dmap
 end
+
+p a.to_dmap
+a.close_stream
+
+DMAP::Array.parse_immediately = true
+p DMAP::Element.new(open("test"))
