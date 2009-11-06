@@ -1,5 +1,9 @@
 = dmap
 
+WHOA THERE!
+
+This is very unfinished work. Feel free to use or expand, but expect some changes.
+
 I'm planning on building a Ruby library to parse and create DMAP bytestrings. Primarily in order to create a DAAP server in ruby, though if anyone has other interesting uses that would require changes to this code please don't hesitate to get in touch!
 
 == What is dmap?
@@ -7,3 +11,32 @@ I'm planning on building a Ruby library to parse and create DMAP bytestrings. Pr
 DMAP are a method of storing a variety of objects in a bytestring, its used all over the shot by Apple in iTunes, iPhoto and probably many other places. You can read up a little on the wikipedia (http://en.wikipedia.org/wiki/Digital_Audio_Access_Protocol) or read about the daap protocol (http://tapjam.net/daap/) to get the gist of it.
 
 There's a big ol' list of the tags that are known on the deleet.de website (http://www.deleet.de/projekte/daap/?ContentCodes) but there are undoubtedly many more (I remember from an old project that similar file structure is used for QuickTime's mov containers and even for the mp4 container, so there may well be more there too). If you find any useful resources please get in touch!
+
+== Examples!
+
+We all love examples, so here's an example of how to use this module:
+
+    require 'dmap'
+    
+    # You can load from any IO source:
+    d = DMAP::Element(open("your_dmap"))
+    p d
+    # => <MSRV: [<MINM: "I'm a string!">]>
+
+    # Or write out what you want in code:
+	d = DMAP::Element.new("msrv",[DMAP::Element.new('minm',"I'm a string!")])
+	p d
+    # => <MSRV: [<MINM: "I'm a string!">]>
+	
+    # All DMAP elements act like their Ruby counterparts:
+    d.push(DMAP::Element.new('asdm'))
+
+    # They can also be pre-populated with data of an appropriate type
+    d.push(DMAP::Element.new('astm',123))
+
+    p d
+    # => <MSRV: [<MINM: "I'm a string!">, <ASDM: Fri Nov 06 11:18:29 +0000 2009>, <ASTM: 123>]>
+
+If you want to allow parsing of more tags, you're probably not going to want to go there right now (I'm likely to change the way this works) but if you just specify a new constant in the DMAP module, who's name is the 4-byte code, set it to an array like [:string, 'domain.app.name'].
+
+The first item there specifies what datatype it is, but you will need to have a function called DMAP::Element#parse_your_datatype - you'll get the idea if you look into the code. You will also need to extend the real class used to store your value so that it has a #to_dmap function. Again, go poke around the code.
