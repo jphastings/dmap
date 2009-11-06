@@ -26,7 +26,7 @@ module DMAP
         @tag = tag_or_dmap.read(4).downcase
         @io = tag_or_dmap if new_content.nil?
       rescue NoMethodError
-        @tag = tag_or_dmap[0..3].upcase
+        @tag = tag_or_dmap[0..3].downcase
       end
       
       # Find out the details of this tag
@@ -253,7 +253,7 @@ module DMAP
     end
     
     def pack_code
-      {1=>"C",-1=>"c",2=>"n",4=>"N",8=>"Q",-8=>"q"}[length * (signed ? -1 : 1)] # FIXME: pack codes for all signed cases
+      {1=>"C",-1=>"c",2=>"n",4=>"N",8=>"Q",-8=>"q"}[@box_size * (@signed ? -1 : 1)] # FIXME: pack codes for all signed cases
     end
     
     def inspect
