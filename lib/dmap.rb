@@ -4,13 +4,12 @@ require 'delegate'
 
 # If you plan on extending this module (like you'll need to if you want extra tags available)
 # make sure you don't use any class names with four letters in. It saves a bit of processor time
-# if I don't have to remove
+# if I don't have to remove them.
 module DMAP
   # Represents any DMAP tag and its content.
   # Will have methods appropriate to the dmap specified
   class Element
-    attr_reader :unparsed_content
-    attr_reader :name
+    attr_reader :tag
     attr_reader :real_class
     
     # Accepts a string or an IO. The first four bytes (in either case) should be the
@@ -25,7 +24,6 @@ module DMAP
       # Assume we have an IO object, if this fails then we probably have a string instead
       begin
         @tag = tag_or_dmap.read(4).upcase
-        @unparsed_content = true
         @io = tag_or_dmap if new_content.nil?
       rescue NoMethodError
         @tag = tag_or_dmap[0..3].upcase
@@ -144,7 +142,7 @@ module DMAP
       original_new
       begin
         # Lets assume its an io
-        @dmap_length = array_or_io.read(4).unpack("N")[0] # FIXME: Should be Q? but that's not working?
+        @dmap_length = array_or_io.read(4).unpack("N")[0]
         @dmap_io     = array_or_io
         @dmap_start  = @dmap_io.tell
         @unparsed_data = true
@@ -152,7 +150,11 @@ module DMAP
       rescue NoMethodError
         begin
           array_or_io.each do |element|
-            self.push element
+            if element.is_a? DMAP::Element
+              self.push element
+            else
+              raise "Thisneeds to be a DMAP::Element. #{element.inspect}"
+            end
           end
         rescue NoMethodError
         end
@@ -208,6 +210,8 @@ module DMAP
   end
   
   # Allows people to specify a integer and the size of the binary representation required
+  #
+  # If you create one with a wanted_box_size that's not 1,2,4,8 you'll run into trouble elsewhere (most likely)
   class MeasuredInteger
     attr_reader :value
     attr_accessor :box_size, :binary, :signed
@@ -223,22 +227,20 @@ module DMAP
     # current value.
     def box_size=(wanted_box_size)
       # Find the smallest number of bytes needed to express this number
-      @box_size = [wanted_box_size || 0,(Math.log(@value) / 2.07944154167984).ceil].max rescue 0 # For when value = 0
+      @box_size = [wanted_box_size || 0,(Math.log(@value) / 2.07944154167984).ceil].max rescue 1 # For when value = 0
     end
     
     def to_dmap
       case @box_size
-      when 1,2,4
+      when 1,2,4,8
         [@box_size,@value].pack("N"<<MeasuredInteger.pack_code(@box_size,@signed))
-      when 8
-        [@box_size,@value / 65536,@value % 65536].pack((@signed) ? "Nll" : "NNN") # FIXME: How do you do signed version :S
       else
         raise "I don't know how to unpack an integer #{@box_size} bytes long"
       end
     end
     
     def self.pack_code(length,signed)
-      out = {1=>"C",2=>"S",4=>"N"}[length]
+      out = {1=>"C",2=>"S",4=>"N",8=>"Q"}[length] # FIXME: Lower case N won't work!
       out.downcase if signed
       return out
     end
@@ -256,6 +258,10 @@ module DMAP
     def initialize(version)
       
     end
+    
+    def inspect
+      "Some kinda version"
+    end
   end
   
   # For adding String#to_dmap
@@ -268,7 +274,7 @@ module DMAP
   # For adding Time#to_dmap
   class Time < Time
     def to_dmap
-      [self.to_i / 65536,self.to_i % 65536].pack("NN")
+      "\000\000\000\004"<<[self.to_i].pack("N")
     end
   end
   
@@ -358,7 +364,7 @@ module DMAP
   ARIF = [:list,   'daap.resolveinfo']
   AEAI = [:number, 'com.apple.itunes.itms-artistid']
   MEDS = [:number, 'dmap.editcommandssupported']
-  F�CH = [:number, 'dmap.haschildcontainers']
+  #F�CH = [:number, 'dmap.haschildcontainers']
   MSIX = [:number, 'dmap.supportsindex']
   ATED = [:number, 'daap.supportsextradata']
   AEPI = [:number, 'com.apple.itunes.itms-playlistid']
@@ -423,18 +429,3 @@ module DMAP
   ASDM = [:time,   'daap.songdatemodified']
   AESF = [:number, 'com.apple.itunes.itms-storefrontid']
 end
-
-p a = DMAP::Element.new("msrv",[
-  DMAP::Element.new('mspi',[400,4]),
-  DMAP::Element.new("minm","Howdy Ho!"),
-  DMAP::Element.new("mstc")
-])
-open("test","w") do |f|
-  f.write a.to_dmap
-end
-
-p a.to_dmap
-a.close_stream
-
-DMAP::Array.parse_immediately = true
-p DMAP::Element.new(open("test"))
