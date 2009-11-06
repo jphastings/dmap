@@ -62,7 +62,12 @@ module DMAP
     
     # Adds the tag to a request to create the dmap
     def to_dmap
-      "#{@tag.downcase}#{@real_class.to_dmap}"
+      begin
+        "#{@tag.downcase}#{@real_class.to_dmap}"
+      rescue
+        warn("Error while putting #{@tag} to dmap")
+        raise
+      end
     end
     
     private
@@ -231,7 +236,7 @@ module DMAP
     # current value.
     def box_size=(wanted_box_size)
       # Find the smallest number of bytes needed to express this number
-      @box_size = [wanted_box_size || 0,(Math.log((Math.log(@value) / 2.07944154167984).ceil)/0.693147180559945).ceil].max rescue 1 # For when value = 0
+      @box_size = [wanted_box_size || 1,2**((Math.log(Math.log(@value) / Math.log(64))/Math.log(2)).ceil)].max rescue 1 # For log(0)
     end
     
     def to_dmap
@@ -257,15 +262,16 @@ module DMAP
   
   # A class to store version numbers
   class Version
-    def initialize(version = "1.0")
-      @major,@minor = (version.to_s<<".0").split(".").collect{|n| n.to_i }
-      if @major > 63 or @minor > 63
-        raise RangeError "Neither major nor minor version numbers can be above 63. Surely that's enough?"
+    attr_accessor :maximus,:major,:minor,:minimus
+    def initialize(version = "0.1.0.0")
+      @maximus,@major,@minor,@minimus = (version.to_s<<".0.0.0").split(".").collect{|n| n.to_i }
+      if @maximus > 255 or @major > 255 or @minor > 255 or @minimus > 255
+        raise RangeError "None of the version points can be above 255. Surely that's enough?"
       end
     end
     
     def to_dmap
-      "\000\000\000\004"<<[@major,@minor].pack("nn")
+      "\000\000\000\004"<<[@maximus,@major,@minor,@minimus].pack("CCCC")
     end
     
     def inspect
@@ -322,7 +328,7 @@ module DMAP
   AESN = [:string, 'com.apple.itunes.series-name']
   AESP = [:number, 'com.apple.itunes.smart-playlist']
   AESU = [:number, 'com.apple.itunes.season-num']
-  AESV = [:number, 'com.apple.itunes.music-sharing-version']
+  AESV = [:version,'com.apple.itunes.music-sharing-version'] # They think its a :number
   AGRP = [:string, 'daap.songgrouping']
   APLY = [:list,   'daap.databaseplaylists']
   APRM = [:number, 'daap.playlistrepeatmode']
