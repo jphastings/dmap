@@ -265,6 +265,10 @@ module DMAP
       end
     end
     
+    def to_dmap
+      "\000\000\000\004"<<[@major,@minor].pack("nn")
+    end
+    
     def inspect
       "v#{@major}.#{@minor}"
     end
