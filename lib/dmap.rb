@@ -88,7 +88,7 @@ module DMAP
       begin
         @real_class = MeasuredInteger.new(@io.read(@io.read(4).unpack("N")[0]).unpack("C")[0],1,false)
       rescue NoMethodError
-        @real_class = MeasuredInteger.new(0,1,false)
+        @real_class = MeasuredInteger.new(content || 0,1,false)
       end
     end
     
@@ -96,7 +96,7 @@ module DMAP
       begin
         @real_class = MeasuredInteger.new(@io.read(@io.read(4).unpack("N")[0]).unpack("n")[0],2,false)
       rescue NoMethodError
-        @real_class = MeasuredInteger.new(0,2,false)
+        @real_class = MeasuredInteger.new(content || 0,2,false)
       end
     end
     
@@ -104,7 +104,7 @@ module DMAP
       begin
         @real_class = MeasuredInteger.new(@io.read(@io.read(4).unpack("N")[0]).unpack("N")[0],4,false) # Use L?
       rescue NoMethodError
-        @real_class = MeasuredInteger.new(0,4,false)
+        @real_class = MeasuredInteger.new(content || 0,4,false)
       end
     end
     
@@ -112,7 +112,7 @@ module DMAP
       begin
         @real_class = MeasuredInteger.new(@io.read(@io.read(4).unpack("N")[0]).unpack("Q")[0],8,false)
       rescue NoMethodError
-        @real_class = MeasuredInteger.new(0,8,false)
+        @real_class = MeasuredInteger.new(content || 0,8,false)
       end
     end
     
@@ -120,7 +120,7 @@ module DMAP
       begin
         @real_class = MeasuredInteger.new(@io.read(@io.read(4).unpack("N")[0]).unpack("l")[0],4,true)
       rescue NoMethodError
-        @real_class = MeasuredInteger.new(0,4,true)
+        @real_class = MeasuredInteger.new(content || 0,4,true)
       end
     end
     
@@ -238,7 +238,7 @@ module DMAP
     attr_accessor :box_size, :binary, :signed
     
     def initialize(value,box_size = 1,signed = false)
-      @value = value
+      @value = value.to_i
       @box_size = box_size
       @signed = signed
     end
@@ -257,8 +257,6 @@ module DMAP
     end
     
     def inspect
-      # This is a bit of a guess, no change to the data, just helps inspection
-      return (@value == 1) ? "true" : "false" if @binary
       @value
     end
   end
@@ -449,3 +447,5 @@ module DMAP
     :muty => ['dmap.updatetype', :byte],
   }
 end
+
+p DMAP::Element.new('mstt',1)
