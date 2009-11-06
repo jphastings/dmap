@@ -24,8 +24,8 @@ We all love examples, so here's an example of how to use this module:
     # => <MSRV: [<MINM: "I'm a string!">]>
 
     # Or write out what you want in code:
-	d = DMAP::Element.new("msrv",[DMAP::Element.new('minm',"I'm a string!")])
-	p d
+    d = DMAP::Element.new("msrv",[DMAP::Element.new('minm',"I'm a string!")])
+    p d
     # => <MSRV: [<MINM: "I'm a string!">]>
 	
     # All DMAP elements act like their Ruby counterparts:
