@@ -28,7 +28,8 @@ We all love examples, so here's an example of how to use this module:
     p d
     # => <MSRV: [<MINM: "I'm a string!">]>
 	
-    # All DMAP elements act like their Ruby counterparts (I've ballsed this up a little, functions taking blocks are playing up):
+    # All DMAP elements act like their Ruby counterparts
+    # (I've ballsed this up a little, functions taking blocks are playing up):
     d.push(DMAP::Element.new('asdm'))
 
     # They can also be pre-populated with data of an appropriate type
