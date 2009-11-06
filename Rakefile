@@ -5,7 +5,7 @@ begin
   require 'jeweler'
   Jeweler::Tasks.new do |gem|
     gem.name = "dmap"
-    gem.version = "0.1.4"
+    gem.version = "0.1.6"
     gem.summary = %Q{Parses Apple's DMAP strings (4-byte serialization method)}
     gem.description = %Q{Apple uses a system of serialization (I think its called dmap…) where a 4-byte string tells of the information following, both its type and what it represents. Its used in the DAAP (Protocol), QuickTime mov structure and doubtless many other places.}
     gem.email = "jphastings@gmail.com"
