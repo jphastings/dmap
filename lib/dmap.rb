@@ -447,5 +447,3 @@ module DMAP
     :muty => ['dmap.updatetype', :byte],
   }
 end
-
-p DMAP::Element.new('mstt',1)
