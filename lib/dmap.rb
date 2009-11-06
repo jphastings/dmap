@@ -126,7 +126,6 @@ module DMAP
   # it later if the contents are requested
   class Array < Array
     attr_reader :unparsed_data
-    attr_accessor :parse_immediately
     @@parse_immediately = false
     
     def self.parse_immediately

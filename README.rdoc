@@ -21,7 +21,7 @@ We all love examples, so here's an example of how to use this module:
     # You can load from any IO source:
     d = DMAP::Element(open("your_dmap"))
     p d
-    # => <MSRV: [<MINM: "I'm a string!">]>
+    # => <MINM: "I'm a string!">
 
     # Or write out what you want in code:
     d = DMAP::Element.new("msrv",[DMAP::Element.new('minm',"I'm a string!")])
@@ -37,6 +37,21 @@ We all love examples, so here's an example of how to use this module:
 
     p d
     # => <MSRV: [<MINM: "I'm a string!">, <ASDM: Fri Nov 06 11:18:29 +0000 2009>, <ASTM: 123>]>
+    
+    # Ooh! And there's more, if you're parsing a DMAP and it's very large, this
+    # library plays nice and only parses the bits you need so far:
+	d = DMAP::Element(open("your_array-like_dmap"))
+    p d
+    # => <MSRV: Some unparsed DMAP elements>
+	# Calling any method of the array that requires knowledge of its contents
+	# will automagically parse what's required, or you can call it explicitly:
+    d.parse_dmap
+    p d
+    # => <MSRV: [<MINM: "I'm a string!">,<MSRV: Some unparsed DMAP elements>]>
+    # Or, if you'd rather not have to worry you can just tell arrays to parse immediately:
+    DMAP::Array.parse_immediately = true
+    # Just remember you have to do this before you start any parsing in order for it to have an effect
+    
 
 If you want to allow parsing of more tags, you're probably not going to want to go there right now (I'm likely to change the way this works) but if you just specify a new constant in the DMAP module, who's name is the 4-byte code, set it to an array like [:string, 'domain.app.name'].
 
