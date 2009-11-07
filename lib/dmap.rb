@@ -23,10 +23,10 @@ module DMAP
     def initialize(tag_or_dmap,new_content = nil)    
       # Assume we have an IO object, if this fails then we probably have a string instead
       begin
-        @tag = tag_or_dmap.read(4).downcase
+        @tag = tag_or_dmap.read(4)
         @io = tag_or_dmap if new_content.nil?
       rescue NoMethodError
-        @tag = tag_or_dmap[0..3].downcase
+        @tag = tag_or_dmap[0..3]
       end
       
       # Find out the details of this tag
