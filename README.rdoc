@@ -1,3 +1,7 @@
+= READ ME FIRST
+
+This project is now defunkt! Chendo has made a superlative successor to this gem, dmap-ng (https://github.com/chendo/dmap-ng) - you should be using that!
+
 = dmap
 
 WHOA THERE!

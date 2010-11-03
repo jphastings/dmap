@@ -41,7 +41,7 @@ module DMAP
       eigenclass = class<<self; self; end
       eigenclass.class_eval do
         extend Forwardable
-        def_delegators :@real_class,*fudge.methods - ['__send__','__id__','to_dmap']
+        def_delegators :@real_class,*fudge.methods - [:__send__,:__id__,:to_dmap,:object_id]
         def inspect
           "<#{@tag}: #{@real_class.inspect}>"
         end
@@ -246,7 +246,10 @@ module DMAP
     def to_dmap # TODO: Tidy me
       case @box_size
       when 1,2,4,8
-        [@box_size,@value].pack("N"<<pack_code)
+        len = [@box_size].pack("N")
+        val = [@value].pack(pack_code)
+        val.reverse! if @box_size == 8
+        len<<val
       else
         raise "I don't know how to unpack an integer #{@box_size} bytes long"
       end
@@ -445,5 +448,20 @@ module DMAP
     :mupd => ['dmap.updateresponse', :list],
     :musr => ['dmap.serverrevision', :integer],
     :muty => ['dmap.updatetype', :byte],
+  }
+  
+  TYPES = {
+    :list => 12,
+    :version => 11,
+    :time => 10,
+    :string => 9,
+    :long => 8,
+    :signed_long => 7,
+    :integer => 6,
+    :signed_integer => 5,
+    :short => 4,
+    :signed_short => 3,
+    :byte => 2,
+    :signed_byte => 1
   }
 end
